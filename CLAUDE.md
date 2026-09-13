@@ -12,7 +12,7 @@ ledger annotate <field> <annotation> # add annotation
 ledger migrate check <migration>   # blast radius analysis
 ledger export pact|arbiter|baton|sentinel  # export for consumer
 ledger serve                       # HTTP API (port 7701)
-python3 -m pytest tests/ -v       # run tests (948)
+python3 -m pytest tests/ -v       # run executable tests (984; 142 root scaffold cases skip)
 ```
 
 ## Architecture
@@ -76,9 +76,9 @@ src/
 - Schemas stored verbatim (no normalization)
 - Return ALL validation violations, not just first
 - Graceful degradation when Arbiter unavailable (skip canary registration)
-- Tests: 948 total (contract + Goodhart), no external services required
+- Tests: 984 passing (contract, Goodhart, regression); 142 root scaffold cases skip because the ledger facade is not implemented. No external services required
 - 38 constraints (C001-C038) in constraints.yaml
 
 ## Kindex
 
-Ledger captures discoveries, decisions, and classification rationale in [Kindex](~/Code/kindex). Search before adding. Link related concepts.
+Ledger captures discoveries, decisions, and classification rationale in [Kindex](~/WanderRepos/repos/kindex). Search before adding. Link related concepts.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -307,6 +308,35 @@ def _extract_type_and_constraints(raw: str) -> tuple[str, list[ColumnConstraint]
     return type_part, constraints
 
 
+def _split_sql_clauses(sql: str, delimiter: str) -> list[str]:
+    """Split only outside quoted literals/identifiers and parenthesized types."""
+    parts = []
+    start = 0
+    depth = 0
+    quote = None
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if quote:
+            if char == quote:
+                if index + 1 < len(sql) and sql[index + 1] == quote:
+                    index += 1
+                else:
+                    quote = None
+        elif char in ("'", '"', "`"):
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+        elif char == delimiter and depth == 0:
+            parts.append(sql[start:index].strip())
+            start = index + 1
+        index += 1
+    parts.append(sql[start:].strip())
+    return [part for part in parts if part]
+
+
 def parse_migration(sql: str, source_path: str) -> ParsedMigration:
     """Parse SQL migration file using regex extraction."""
     if not sql or not sql.strip():
@@ -324,14 +354,25 @@ def parse_migration(sql: str, source_path: str) -> ParsedMigration:
         raise MigrationParseError(source_path=source_path, message="SQL content is empty or contains only comments")
 
     # Split on semicolons to get statements
-    raw_statements = [s.strip() for s in stripped.split(";") if s.strip()]
+    raw_statements = _split_sql_clauses(stripped, ";")
     statement_count = len(raw_statements)
 
     operations: list[ColumnOperation] = []
     warnings: list[ParseWarning] = []
 
+    # Expand comma-separated ALTER actions while preserving statement count.
+    statements = []
+    for statement in raw_statements:
+        match = re.match(r"(ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?\S+)\s+(.+)",
+                         statement, re.IGNORECASE | re.DOTALL)
+        if match:
+            statements.extend(f"{match.group(1)} {clause}"
+                              for clause in _split_sql_clauses(match.group(2), ","))
+        else:
+            statements.append(statement)
+
     # Track line numbers for statements
-    for stmt in raw_statements:
+    for stmt in statements:
         # Try ADD COLUMN
         m = _RE_ADD_COL.match(stmt)
         if m:
@@ -660,6 +701,26 @@ def approve_plan(
     rationale: str,
     plans_dir: str,
 ) -> MigrationPlan:
+    """Serialize approval and its audit record across processes."""
+    if not os.path.isdir(plans_dir):
+        raise PlanNotFoundError(plan_id=plan_id, search_path=plans_dir)
+    lock_path = os.path.join(plans_dir, ".approval.lock")
+    try:
+        with open(lock_path, "a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            return _approve_plan_locked(plan_id, reviewer, review_ref, rationale, plans_dir)
+    except OSError as exc:
+        raise PlanPersistenceError(plan_id=plan_id, target_path=plans_dir,
+                                   message=f"Cannot persist approval: {exc}") from exc
+
+
+def _approve_plan_locked(
+    plan_id: str,
+    reviewer: str,
+    review_ref: str,
+    rationale: str,
+    plans_dir: str,
+) -> MigrationPlan:
     """Approve a HUMAN_GATE PENDING plan."""
     plan = load_plan(plan_id, plans_dir)
 
@@ -704,6 +765,23 @@ def approve_plan(
 
     # Persist updated plan
     plan_path = os.path.join(plans_dir, f"{plan_id}.json")
-    _atomic_write_json(plan_path, plan.model_dump(mode="json"), plan_id)
+    record = ApprovalRecord(
+        plan_id=plan_id, reviewer=reviewer, review_reference=review_ref,
+        rationale=rationale, timestamp=now, new_status=PlanStatus.APPROVED,
+    )
+    changelog_path = os.path.join(plans_dir, "changelog.jsonl")
+    with open(changelog_path, "a+") as changelog:
+        changelog.seek(0, os.SEEK_END)
+        original_size = changelog.tell()
+        try:
+            changelog.write(record.model_dump_json() + "\n")
+            changelog.flush()
+            os.fsync(changelog.fileno())
+            _atomic_write_json(plan_path, plan.model_dump(mode="json"), plan_id)
+        except Exception:
+            changelog.truncate(original_size)
+            changelog.flush()
+            os.fsync(changelog.fileno())
+            raise
 
     return plan

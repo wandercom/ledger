@@ -3,7 +3,7 @@
     "code",
     "python"
   ],
-  "node_count": 275,
+  "node_count": 276,
   "nodes": [
     {
       "domains": [
@@ -3028,6 +3028,17 @@
       "title": "ColumnOperation",
       "type": "concept",
       "updated_at": "2026-05-30T14:56:31",
+      "weight": 0.5
+    },
+    {
+      "domains": [
+        "ledger",
+        "qualification"
+      ],
+      "id": "294aa33869b9",
+      "title": "Ledger migration qualification: API, approval audit, and Arbiter fingerprint registration",
+      "type": "concept",
+      "updated_at": "2026-09-13T05:01:20.886855+00:00",
       "weight": 0.5
     }
   ],

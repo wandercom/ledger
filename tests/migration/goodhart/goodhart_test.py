@@ -559,7 +559,7 @@ class TestGoodhartCreatePlan:
         def get_fk(table):
             return fk_map.get(table, [])
 
-        registry.get_foreign_key_references = MagicMock(side_effect=get_fk)
+        registry.get_foreign_keys = MagicMock(side_effect=get_fk)
         registry.get_fk_references = MagicMock(side_effect=get_fk)
         registry.lookup_fk = MagicMock(side_effect=get_fk)
         return registry

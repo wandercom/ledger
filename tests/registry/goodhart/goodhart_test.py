@@ -54,36 +54,36 @@ class TestGoodhartBackendIdRegex:
     def test_goodhart_backend_id_regex_too_short(self, tmp_path):
         """Backend IDs shorter than 3 characters must be rejected per the regex constraint."""
         init(tmp_path)
-        meta = _make_metadata("ab")  # only 2 chars
         with pytest.raises(Exception):  # Could be ValueError or LedgerError
+            meta = _make_metadata("ab")  # only 2 chars
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_starts_with_digit(self, tmp_path):
         """Backend IDs must start with a lowercase letter; IDs starting with a digit must be rejected."""
         init(tmp_path)
-        meta = _make_metadata("1backend")
         with pytest.raises(Exception):
+            meta = _make_metadata("1backend")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_uppercase(self, tmp_path):
         """Backend IDs must be lowercase only; uppercase characters must be rejected."""
         init(tmp_path)
-        meta = _make_metadata("MyBackend")
         with pytest.raises(Exception):
+            meta = _make_metadata("MyBackend")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_ends_with_hyphen(self, tmp_path):
         """Backend IDs must end with an alphanumeric character; trailing hyphens must be rejected."""
         init(tmp_path)
-        meta = _make_metadata("my-backend-")
         with pytest.raises(Exception):
+            meta = _make_metadata("my-backend-")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_ends_with_underscore_rejected(self, tmp_path):
         """Backend IDs ending with underscore must be rejected per the regex requiring alphanumeric end."""
         init(tmp_path)
-        meta = _make_metadata("my_backend_")
         with pytest.raises(Exception):
+            meta = _make_metadata("my_backend_")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_too_long(self, tmp_path):
@@ -92,8 +92,8 @@ class TestGoodhartBackendIdRegex:
         # 65 chars: starts with 'a', 63 middle chars, ends with 'z'
         long_id = "a" + "b" * 63 + "z"  # 65 chars
         assert len(long_id) == 65
-        meta = _make_metadata(long_id)
         with pytest.raises(Exception):
+            meta = _make_metadata(long_id)
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_regex_valid_boundary_3_chars(self, tmp_path):
@@ -116,15 +116,15 @@ class TestGoodhartBackendIdRegex:
     def test_goodhart_backend_id_special_chars(self, tmp_path):
         """Backend IDs containing characters outside [a-z0-9_-] like dots must be rejected."""
         init(tmp_path)
-        meta = _make_metadata("my.backend")
         with pytest.raises(Exception):
+            meta = _make_metadata("my.backend")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_single_char_rejected(self, tmp_path):
         """A single-character backend_id must be rejected as it fails the 3-char minimum."""
         init(tmp_path)
-        meta = _make_metadata("a")
         with pytest.raises(Exception):
+            meta = _make_metadata("a")
             register_backend(tmp_path, meta, actor="test")
 
     def test_goodhart_backend_id_with_underscores_and_hyphens(self, tmp_path):
