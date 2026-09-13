@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
-    { name = "Jeremy McEntire", email = "jandrewmcentire@gmail.com" },
+    { name = "Wander" },
 ]
 dependencies = [
     "pydantic>=2.0",
