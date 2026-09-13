@@ -1,5 +1,5 @@
 # Reeve backend declaration for Ledger registration. See
-# ~/Code/ledger/.ledger/registry/<backend_id>.yaml format.
+# ~/WanderRepos/repos/ledger/.ledger/registry/<backend_id>.yaml format.
 
 backend_id: reeve_main
 type: postgres

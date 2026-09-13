@@ -25,6 +25,7 @@ api = [
 ]
 mock = [
     "faker>=22.0",
+    "httpx>=0.27",
 ]
 postgres = [
     "psycopg2-binary>=2.9",

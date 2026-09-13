@@ -403,7 +403,7 @@ class TestGoodhartArbiter:
         mock_response.text = "Forbidden"
         mock_response.json.side_effect = Exception("not json")
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.Client.post", return_value=mock_response) as mock_post:
             result = register_canary_with_arbiter(
                 "https://arbiter.example.com",
                 self._make_canary_values(),
@@ -414,30 +414,30 @@ class TestGoodhartArbiter:
         assert result.error_message is not None and len(result.error_message) > 0
 
     def test_goodhart_arbiter_success_has_registration_id(self):
-        """On 201 success, result includes registration_id from response."""
+        """On success, registration_id identifies the run sent to Arbiter."""
         mock_response = MagicMock()
         mock_response.status_code = 201
-        mock_response.json.return_value = {"registration_id": "reg-abc123"}
+        mock_response.json.return_value = {"status": "ok", "registered": 1}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.Client.post", return_value=mock_response):
             result = register_canary_with_arbiter(
                 "https://arbiter.example.com",
                 self._make_canary_values(),
                 "tier1", "backend", "table"
             )
         assert result.success is True
-        assert result.registration_id == "reg-abc123"
+        assert result.registration_id.startswith("ledger-backend-table-")
         assert result.arbiter_response_code == 201
 
     def test_goodhart_arbiter_200_missing_registration_id(self):
-        """200 with valid JSON but no registration_id is treated as error."""
+        """200 with valid JSON but no registration acknowledgement is treated as error."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.Client.post", return_value=mock_response):
             result = register_canary_with_arbiter(
                 "https://arbiter.example.com",
                 self._make_canary_values(),
@@ -447,20 +447,20 @@ class TestGoodhartArbiter:
         assert result.error_message is not None
 
     def test_goodhart_arbiter_posts_to_correct_endpoint(self):
-        """Arbiter registration POSTs to {arbiter_api}/v1/canary/register."""
+        """Arbiter registration POSTs to {arbiter_api}/canary/register-fingerprint."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"registration_id": "reg-xyz"}
+        mock_response.json.return_value = {"status": "ok", "registered": 1}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.Client.post", return_value=mock_response) as mock_post:
             register_canary_with_arbiter(
                 "https://arbiter.example.com",
                 self._make_canary_values(),
                 "tier1", "backend", "table"
             )
         called_url = mock_post.call_args[0][0] if mock_post.call_args[0] else mock_post.call_args[1].get("url", "")
-        assert called_url == "https://arbiter.example.com/v1/canary/register"
+        assert called_url == "https://arbiter.example.com/canary/register-fingerprint"
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +520,7 @@ class TestGoodhartE2E:
         """canary_registered is exactly True when arbiter returns 2xx."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"registration_id": "reg-123"}
+        mock_response.json.return_value = {"status": "ok", "registered": 2}
         mock_response.raise_for_status = MagicMock()
 
         fields = [
@@ -531,7 +531,7 @@ class TestGoodhartE2E:
             fields=fields, purpose=MockPurpose.canary, tier="staging",
             arbiter_api="https://arbiter.test", row_count=2
         )
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.Client.post", return_value=mock_response):
             result = generate_mock_records(req)
         assert result.canary_registered is True
 
@@ -550,7 +550,7 @@ class TestGoodhartE2E:
             fields=fields, purpose=MockPurpose.canary, tier="staging",
             arbiter_api="https://arbiter.test", row_count=2
         )
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.Client.post", return_value=mock_response):
             result = generate_mock_records(req)
         assert result.canary_registered is False
 
@@ -594,7 +594,7 @@ class TestGoodhartE2E:
             fields=fields, purpose=MockPurpose.canary, tier="test-tier",
             row_count=5
         )
-        with patch("httpx.post", side_effect=Exception("no arbiter")):
+        with patch("httpx.Client.post", side_effect=Exception("no arbiter")):
             result = generate_mock_records(req)
         values = [str(record["data"]) for record in result.records]
         assert len(set(values)) == 5, f"Expected 5 unique canary values, got {len(set(values))}"
@@ -657,7 +657,7 @@ class TestGoodhartE2E:
             fields=fields, purpose=MockPurpose.canary, tier="alpha",
             row_count=3
         )
-        with patch("httpx.post", side_effect=Exception("no arbiter")):
+        with patch("httpx.Client.post", side_effect=Exception("no arbiter")):
             result = generate_mock_records(req)
         for record in result.records:
             for field_name in ["a", "b", "c"]:

@@ -2,10 +2,10 @@
 
 Schema registry and data obligation manager. Ledger is the authoritative answer to
 "what does the data look like and what are its rules?" for distributed systems built
-with [Pact](https://github.com/jmcentire/pact),
-[Arbiter](https://github.com/jmcentire/arbiter),
-[Baton](https://github.com/jmcentire/baton), and
-[Sentinel](https://github.com/jmcentire/sentinel).
+with [Pact](https://github.com/wandercom/pact),
+[Arbiter](https://github.com/wandercom/arbiter),
+[Baton](https://github.com/wandercom/baton), and
+[Sentinel](https://github.com/wandercom/sentinel).
 
 Ledger tracks every storage backend and external data surface in your system through
 a unified abstraction. Engineers annotate fields with classification tiers and
@@ -293,3 +293,11 @@ pytest tests/migration/
 ## License
 
 [MIT](LICENSE)
+
+### Qualification
+
+The executable suite passes 984 tests. Another 142 root scaffold cases skip because
+the draft `ledger` facade is not implemented; they are not evidence of working features.
+Migration approval records are retained in the plans directory `changelog.jsonl`.
+Canary registration uses Arbiter's `/canary/register-fingerprint` endpoint and requires
+an acknowledgement for every submitted fingerprint before reporting success.

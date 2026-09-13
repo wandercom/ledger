@@ -149,6 +149,11 @@ def require_config(ctx: CliContext) -> None:
 def format_output(result: CommandResult, fmt: OutputFormat) -> str:
     """Serialize CommandResult.data to the requested format string."""
     data = result.data
+    if data is None and fmt in (OutputFormat.json, OutputFormat.yaml):
+        raise LedgerError(violations=[Violation(
+            path="output", message="Structured output requires a data payload",
+            severity=Severity.error, code="SERIALIZATION_ERROR",
+        )])
     if fmt == OutputFormat.json:
         return json.dumps(data)
     elif fmt == OutputFormat.yaml:
@@ -224,7 +229,7 @@ def cli_main(ctx, config_path, verbose, output_format):
     """Ledger CLI — schema governance and migration tooling."""
     ctx.ensure_object(dict)
     ctx.obj["cli_ctx"] = CliContext(
-        config_path=os.path.abspath(config_path),
+        config_path=os.path.abspath(os.path.expanduser(config_path)),
         config=None,
         verbose=verbose,
         output_format=OutputFormat(output_format),

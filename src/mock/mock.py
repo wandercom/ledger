@@ -9,7 +9,7 @@ import string
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from faker import Faker
@@ -465,28 +465,24 @@ def register_canary_with_arbiter(
     table_name: str,
 ) -> CanaryRegistrationResult:
     try:
+        run_id = f"ledger-{backend_id}-{table_name}-{uuid4().hex}"
         payload = {
-            "tier": tier,
-            "backend_id": backend_id,
-            "table_name": table_name,
-            "canary_values": [
-                {
-                    "field_name": cv.field_name,
-                    "row_index": cv.row_index,
-                    "raw_fingerprint": cv.raw_fingerprint,
-                    "shaped_value": str(cv.shaped_value),
-                }
+            "run_id": run_id,
+            "fingerprints": [
+                {"fingerprint": cv.raw_fingerprint, "category": tier, "tier": tier}
                 for cv in canary_values
             ],
         }
         with httpx.Client() as client:
-            resp = client.post(f"{arbiter_api}/canary/register", json=payload, timeout=10.0)
+            resp = client.post(f"{arbiter_api.rstrip('/')}/canary/register-fingerprint",
+                               json=payload, timeout=10.0)
 
         if resp.status_code >= 200 and resp.status_code < 300:
             try:
                 body = resp.json()
-                reg_id = body.get("registration_id")
-                if reg_id is None:
+                registered = body.get("registered")
+                if (body.get("status") != "ok" or type(registered) is not int
+                        or registered != len(canary_values)):
                     return CanaryRegistrationResult(
                         success=False,
                         arbiter_response_code=resp.status_code,
@@ -495,7 +491,7 @@ def register_canary_with_arbiter(
                 return CanaryRegistrationResult(
                     success=True,
                     arbiter_response_code=resp.status_code,
-                    registration_id=reg_id,
+                    registration_id=run_id,
                 )
             except (ValueError, KeyError):
                 return CanaryRegistrationResult(

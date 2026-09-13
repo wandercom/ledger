@@ -656,7 +656,7 @@ class TestRegisterCanaryWithArbiter:
         """HTTP 200 with valid JSON returns success=True."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"registration_id": "reg-123"}
+        mock_response.json.return_value = {"status": "ok", "registered": 1}
         mock_response.raise_for_status = MagicMock()
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)

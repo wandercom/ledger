@@ -16,7 +16,7 @@ def make_entry(field_ref, annotation_key, rule, field_type="string", component_i
     return PropagationEntry(
         field_ref=field_ref,
         annotation_key=annotation_key,
-        rule=rule,
+        rule={"owner": component_id, **rule} if component_id else rule,
         field_type=field_type,
         component_id=component_id,
     )

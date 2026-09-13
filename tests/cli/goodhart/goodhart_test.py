@@ -53,7 +53,7 @@ def make_violation(path="test.path", message="test message", severity=Severity.e
 
 
 def make_result(success=True, data=None, message="", violations=None):
-    return CommandResult(success=success, data=data or {}, message=message, violations=violations or [])
+    return CommandResult(success=success, data=data, message=message, violations=violations or [])
 
 
 def make_ctx(config=None, config_path="/tmp/test-ledger.yaml", verbose=False, output_format=OutputFormat.text):
@@ -198,7 +198,7 @@ class TestGoodhartCliMainErrorHandling:
         violations = [make_violation(message="domain problem")]
         error = LedgerError(violations=violations, exit_code=ExitCode.DOMAIN_ERROR_1)
 
-        with patch('src.cli.config.init_config', side_effect=error):
+        with patch('cli.cli.config.init_config', side_effect=error):
             result = runner.invoke(cli_main, ['init'], catch_exceptions=False)
             # The exit code should be 1
             assert result.exit_code == 1
@@ -212,7 +212,7 @@ class TestGoodhartCliMainErrorHandling:
         violations = [make_violation(message="config problem")]
         error = LedgerError(violations=violations, exit_code=ExitCode.CONFIG_ERROR_3)
 
-        with patch('src.cli.config.load_config', side_effect=error):
+        with patch('cli.cli.config.load_config', side_effect=error):
             result = runner.invoke(cli_main, ['schema', 'validate'], catch_exceptions=False)
             assert result.exit_code == 3
 
@@ -226,7 +226,7 @@ class TestGoodhartCliMainErrorHandling:
         violations = [make_violation(message=msg) for msg in unique_msgs]
         error = LedgerError(violations=violations, exit_code=ExitCode.DOMAIN_ERROR_1)
 
-        with patch('src.cli.config.init_config', side_effect=error):
+        with patch('cli.cli.config.init_config', side_effect=error):
             result = runner.invoke(cli_main, ['init'], catch_exceptions=False)
             stderr_output = result.stderr if hasattr(result, 'stderr') else ''
             for msg in unique_msgs:
@@ -243,7 +243,7 @@ class TestGoodhartCliMainErrorHandling:
         violations = [make_violation(message=msg, code=f"BULK_{i:03d}") for i, msg in enumerate(unique_msgs)]
         error = LedgerError(violations=violations, exit_code=ExitCode.DOMAIN_ERROR_1)
 
-        with patch('src.cli.config.init_config', side_effect=error):
+        with patch('cli.cli.config.init_config', side_effect=error):
             result = runner.invoke(cli_main, ['init'], catch_exceptions=False)
             combined = (result.output or '') + (getattr(result, 'stderr', '') or '')
             for msg in unique_msgs:
@@ -270,7 +270,7 @@ class TestGoodhartRequireConfig:
             ctx = make_ctx(config_path=f.name)
 
         try:
-            with patch('src.cli.config.load_config', return_value={'version': 1}):
+            with patch('cli.cli.config.load_config', return_value={'version': 1}):
                 require_config(ctx)
                 assert ctx.config is not None
                 assert not isinstance(ctx.config, str), "ctx.config should not be a path string"
@@ -465,13 +465,15 @@ class TestGoodhartCmdBackendAdd:
 
     def test_goodhart_delegates_to_registry_with_novel_args(self):
         """cmd_backend_add must delegate to registry.register_backend with exact novel arguments."""
+        import registry as registry_module
         mock_registry = MagicMock()
+        mock_registry.BackendMetadata = registry_module.BackendMetadata
+        mock_registry.BackendType = registry_module.BackendType
         ctx = make_ctx(config={'version': 1})
 
-        with patch('src.cli.registry', mock_registry):
+        with patch('cli.cli.registry', mock_registry), patch('cli.cli.config.load_config', return_value={'version': 1}):
             try:
-                cmd_backend_add(ctx, backend_id='novel-store-xyz',
-                              backend_type=BackendType.dynamodb, owner='comp-999')
+                CliRunner().invoke(cli_main, ['backend', 'add', 'novel-store-xyz', '--type', 'dynamodb', '--owner', 'comp-999'])
             except Exception:
                 pass  # May fail due to mocking depth
 
@@ -484,13 +486,15 @@ class TestGoodhartCmdBackendAdd:
 
     def test_goodhart_custom_backend_type_accepted(self):
         """cmd_backend_add must accept 'custom' BackendType without error."""
+        import registry as registry_module
         mock_registry = MagicMock()
+        mock_registry.BackendMetadata = registry_module.BackendMetadata
+        mock_registry.BackendType = registry_module.BackendType
         ctx = make_ctx(config={'version': 1})
 
-        with patch('src.cli.registry', mock_registry):
+        with patch('cli.cli.registry', mock_registry), patch('cli.cli.config.load_config', return_value={'version': 1}):
             try:
-                cmd_backend_add(ctx, backend_id='my-custom-store',
-                              backend_type=BackendType.custom, owner='comp-1')
+                CliRunner().invoke(cli_main, ['backend', 'add', 'my-custom-store', '--type', 'custom', '--owner', 'comp-1'])
             except Exception:
                 pass
 
@@ -502,8 +506,8 @@ class TestGoodhartCmdBackendAdd:
             pytest.skip("click not available")
         runner = CliRunner(mix_stderr=False)
 
-        with patch('src.cli.registry') as mock_reg, \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.registry') as mock_reg, \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             mock_reg.register_backend.return_value = None
             result = runner.invoke(cli_main, [
                 'backend', 'add', 'novel-be-id', '--type', 'postgres', '--owner', 'comp-x'
@@ -518,15 +522,20 @@ class TestGoodhartCmdBackendAdd:
 
 class TestGoodhartCmdSchemaAdd:
 
-    def test_goodhart_delegates_to_registry_add_schema(self):
+    def test_goodhart_delegates_to_registry_add_schema(self, tmp_path):
         """cmd_schema_add must delegate to registry.add_schema with the exact path."""
+        import registry as registry_module
         mock_registry = MagicMock()
+        mock_registry.BackendMetadata = registry_module.BackendMetadata
+        mock_registry.BackendType = registry_module.BackendType
         ctx = make_ctx(config={'version': 1})
-        novel_path = '/tmp/novel_schema_abc123.yaml'
+        schema_file = tmp_path / 'novel_schema_abc123.yaml'
+        schema_file.write_text('table: users\n')
+        novel_path = str(schema_file)
 
-        with patch('src.cli.registry', mock_registry):
+        with patch('cli.cli.registry', mock_registry), patch('cli.cli.config.load_config', return_value={'version': 1}):
             try:
-                cmd_schema_add(ctx, path=novel_path)
+                CliRunner().invoke(cli_main, ['schema', 'add', novel_path])
             except Exception:
                 pass
 
@@ -540,7 +549,7 @@ class TestGoodhartCmdSchemaAdd:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, ['schema', 'add', '/some/path.yaml'],
                                  catch_exceptions=True)
@@ -557,7 +566,7 @@ class TestGoodhartCmdSchemaShow:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, ['schema', 'show', 'some-backend'],
                                  catch_exceptions=True)
@@ -579,14 +588,14 @@ class TestGoodhartCmdSchemaValidate:
             make_violation(severity=Severity.info, message="info3", code="I3"),
         ]
         result = make_result(success=True, data={'violations': violations}, violations=violations)
-        mock_registry.validate_schemas.return_value = result
+        mock_registry.validate_schemas.return_value = violations
 
         if CliRunner is None:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.registry', mock_registry), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.registry', mock_registry), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             cli_result = runner.invoke(cli_main, ['schema', 'validate'], catch_exceptions=True)
             assert cli_result.exit_code == 0
 
@@ -603,14 +612,14 @@ class TestGoodhartCmdSchemaValidate:
             for i in range(3)
         ]
         result = make_result(success=False, data={'violations': violations}, violations=violations)
-        mock_registry.validate_schemas.return_value = result
+        mock_registry.validate_schemas.return_value = violations
 
         if CliRunner is None:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.registry', mock_registry), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.registry', mock_registry), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             cli_result = runner.invoke(cli_main, ['schema', 'validate'], catch_exceptions=True)
             assert cli_result.exit_code == 1
 
@@ -625,13 +634,13 @@ class TestGoodhartCmdMigratePlan:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, ['migrate', 'plan', 'comp-1', 'migration.sql'],
                                  catch_exceptions=True)
             assert result.exit_code == 3
 
-    def test_goodhart_warnings_only_exit_0(self):
+    def test_goodhart_warnings_only_exit_0(self, tmp_path):
         """cmd_migrate_plan with only warning gate violations must exit 0."""
         mock_migration = MagicMock()
         warnings = [
@@ -643,15 +652,17 @@ class TestGoodhartCmdMigratePlan:
             data={'plan_id': 'plan-123', 'violations': warnings},
             violations=warnings
         )
-        mock_migration.plan_migration.return_value = plan_result
+        mock_migration.plan_migration.return_value = plan_result.data
+        sql_path = tmp_path / 'migration.sql'
+        sql_path.write_text('ALTER TABLE users ADD COLUMN age INT;')
 
         if CliRunner is None:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.migration', mock_migration), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
-            result = runner.invoke(cli_main, ['migrate', 'plan', 'comp-1', 'migration.sql'],
+        with patch('cli.cli.migration', mock_migration), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
+            result = runner.invoke(cli_main, ['migrate', 'plan', 'comp-1', str(sql_path)],
                                  catch_exceptions=True)
             assert result.exit_code == 0
 
@@ -669,8 +680,8 @@ class TestGoodhartCmdMigrateApprove:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.migration', mock_migration), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.migration', mock_migration), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, [
                 'migrate', 'approve', 'plan-novel-789', '--review', 'reviewer-novel-xyz'
             ], catch_exceptions=True)
@@ -685,7 +696,7 @@ class TestGoodhartCmdMigrateApprove:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, [
                 'migrate', 'approve', 'plan-1', '--review', 'rev-1'
@@ -706,8 +717,8 @@ class TestGoodhartCmdExport:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.export', mock_export), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.export', mock_export), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, ['export', '--format', 'sentinel'],
                                  catch_exceptions=True)
             if result.exit_code == 0:
@@ -723,8 +734,8 @@ class TestGoodhartCmdExport:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.export', mock_export), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.export', mock_export), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, ['export', '--format', 'baton'],
                                  catch_exceptions=True)
             if result.exit_code == 0:
@@ -740,8 +751,8 @@ class TestGoodhartCmdExport:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.export', mock_export), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.export', mock_export), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, ['export', '--format', 'arbiter'],
                                  catch_exceptions=True)
             if result.exit_code == 0:
@@ -754,7 +765,7 @@ class TestGoodhartCmdExport:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, ['export', '--format', 'pact'],
                                  catch_exceptions=True)
@@ -774,8 +785,8 @@ class TestGoodhartCmdMock:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.mock', mock_mod), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.mock', mock_mod), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, [
                 'mock', 'be-1', 'users', '--count', '37'
             ], catch_exceptions=True)
@@ -793,8 +804,8 @@ class TestGoodhartCmdMock:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.mock', mock_mod), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.mock', mock_mod), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, [
                 'mock', 'be-1', 'users', '--count', '5', '--seed', '98765'
             ], catch_exceptions=True)
@@ -812,8 +823,8 @@ class TestGoodhartCmdMock:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.mock', mock_mod), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.mock', mock_mod), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, [
                 'mock', 'be-1', 'users', '--count', '10000'
             ], catch_exceptions=True)
@@ -831,8 +842,8 @@ class TestGoodhartCmdMock:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.mock', mock_mod), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.mock', mock_mod), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, [
                 'mock', 'be-1', 'users', '--count', '5'
             ], catch_exceptions=True)
@@ -847,7 +858,7 @@ class TestGoodhartCmdMock:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, [
                 'mock', 'be-1', 'users', '--count', '5'
@@ -868,8 +879,8 @@ class TestGoodhartCmdServe:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.api', mock_api), \
-             patch('src.cli.config.load_config', return_value={'version': 1}):
+        with patch('cli.cli.api', mock_api), \
+             patch('cli.cli.config.load_config', return_value={'version': 1}):
             result = runner.invoke(cli_main, ['serve'], catch_exceptions=True)
 
         mock_api.start_server.assert_called_once()
@@ -880,7 +891,7 @@ class TestGoodhartCmdServe:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.load_config',
+        with patch('cli.cli.config.load_config',
                    side_effect=LedgerError(violations=[], exit_code=ExitCode.CONFIG_ERROR_3)):
             result = runner.invoke(cli_main, ['serve'], catch_exceptions=True)
             assert result.exit_code == 3
@@ -890,18 +901,18 @@ class TestGoodhartCmdServe:
 
 class TestGoodhartCmdInit:
 
-    def test_goodhart_init_succeeds_without_config(self):
+    def test_goodhart_init_succeeds_without_config(self, tmp_path):
         """cmd_init must succeed without any existing config file — it's the only command allowed to."""
         if CliRunner is None:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config') as mock_config:
+        with patch('cli.cli.config') as mock_config:
             mock_config.init_config.return_value = None
             # Ensure load_config is NOT called
             mock_config.load_config.side_effect = Exception("Should not be called")
 
-            result = runner.invoke(cli_main, ['--config', '/tmp/new-ledger-xyz.yaml', 'init'],
+            result = runner.invoke(cli_main, ['--config', str(tmp_path / 'new-ledger-xyz.yaml'), 'init'],
                                  catch_exceptions=True)
             assert result.exit_code == 0
             mock_config.init_config.assert_called_once()
@@ -925,7 +936,7 @@ class TestGoodhartExitCodes:
             pytest.skip("click not available")
         runner = CliRunner()
 
-        with patch('src.cli.config.init_config', side_effect=KeyboardInterrupt()):
+        with patch('cli.cli.config.init_config', side_effect=KeyboardInterrupt()):
             result = runner.invoke(cli_main, ['init'], catch_exceptions=False)
             assert result.exit_code == 130
 
@@ -941,13 +952,13 @@ class TestGoodhartConfigPathTilde:
         runner = CliRunner()
 
         # We'll check that the CLI doesn't crash with ~ path and resolves it
-        with patch('src.cli.config') as mock_config:
+        with patch('cli.cli.config') as mock_config:
             mock_config.init_config.return_value = None
             result = runner.invoke(cli_main, ['--config', '~/ledger.yaml', 'init'],
                                  catch_exceptions=True)
             # If init_config was called, check the path doesn't have literal ~
             if mock_config.init_config.called:
                 # The path should have been expanded
-                pass
+                assert mock_config.init_config.call_args.args[0] == os.path.join(os.environ["HOME"], "ledger.yaml")
             # At minimum it shouldn't crash
             assert result.exit_code in (0, 1, 3)

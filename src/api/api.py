@@ -92,6 +92,7 @@ class MockGenerationRequest(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str
+    detail: str
     violations: list = []
 
 
@@ -145,7 +146,8 @@ class InMemoryRegistry:
         columns = []
         annotations = []
         if isinstance(parsed, dict):
-            raw_columns = parsed.get("columns", [])
+            table = parsed.get("table", parsed)
+            raw_columns = table.get("columns", []) if isinstance(table, dict) else parsed.get("columns", [])
             if isinstance(raw_columns, list):
                 for col in raw_columns:
                     if isinstance(col, dict):
@@ -176,7 +178,9 @@ class InMemoryRegistry:
             raise KeyError(f"Backend '{backend_id}' not found")
         schemas = self.schemas.get(backend_id, {})
         return [
-            {"table_name": k, "version": v.get("version", ""), "stored_at": v.get("stored_at", "")}
+            {"table_name": k, "version": v.get("version", ""), "stored_at": v.get("stored_at", ""),
+             "column_count": len(v.get("columns", [])),
+             "annotation_count": len(v.get("annotations", []))}
             for k, v in sorted(schemas.items())
         ]
 
@@ -481,7 +485,11 @@ def handle_approve_migration_plan(
 
     plan = registry.plans[plan_id]
 
-    if plan["status"] == PlanStatus.approved.value:
+    if datetime.fromisoformat(plan["expires_at"]) <= datetime.now(timezone.utc):
+        plan["status"] = PlanStatus.expired.value
+        raise PlanNotFoundError(f"Plan '{plan_id}' has expired")
+
+    if plan["status"] != PlanStatus.pending.value:
         raise InvalidTransitionError(
             f"Plan '{plan_id}' is already approved",
             violations=[{"message": "Plan already approved", "severity": "error"}],
@@ -632,42 +640,42 @@ def create_app(config: LedgerConfig) -> FastAPI:
     def _handle_backend_not_found(request: Request, exc: BackendNotFoundError):
         return JSONResponse(
             status_code=404,
-            content={"error": exc.message, "violations": []},
+            content=ErrorResponse(error=exc.message, detail=exc.message).model_dump(),
         )
 
     @app.exception_handler(SchemaNotFoundError)
     def _handle_schema_not_found(request: Request, exc: SchemaNotFoundError):
         return JSONResponse(
             status_code=404,
-            content={"error": exc.message, "violations": []},
+            content=ErrorResponse(error=exc.message, detail=exc.message).model_dump(),
         )
 
     @app.exception_handler(ConflictError)
     def _handle_conflict(request: Request, exc: ConflictError):
         return JSONResponse(
             status_code=409,
-            content={"error": exc.message, "violations": exc.violations},
+            content=ErrorResponse(error=exc.message, detail=exc.message, violations=exc.violations).model_dump(),
         )
 
     @app.exception_handler(ValidationError)
     def _handle_validation(request: Request, exc: ValidationError):
         return JSONResponse(
             status_code=400,
-            content={"error": exc.message, "violations": exc.violations},
+            content=ErrorResponse(error=exc.message, detail=exc.message, violations=exc.violations).model_dump(),
         )
 
     @app.exception_handler(InvalidTransitionError)
     def _handle_invalid_transition(request: Request, exc: InvalidTransitionError):
         return JSONResponse(
             status_code=409,
-            content={"error": exc.message, "violations": exc.violations},
+            content=ErrorResponse(error=exc.message, detail=exc.message, violations=exc.violations).model_dump(),
         )
 
     @app.exception_handler(PlanNotFoundError)
     def _handle_plan_not_found(request: Request, exc: PlanNotFoundError):
         return JSONResponse(
             status_code=404,
-            content={"error": exc.message, "violations": []},
+            content=ErrorResponse(error=exc.message, detail=exc.message).model_dump(),
         )
 
     # ── Routes ──────────────────────────────────────

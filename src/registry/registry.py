@@ -511,6 +511,6 @@ def read_changelog(
 
     # Apply limit (most recent first when limited, but return ascending)
     if limit > 0 and len(entries) > limit:
-        entries = entries[:limit]
+        entries = entries[-limit:]
 
     return entries
