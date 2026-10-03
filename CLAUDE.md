@@ -81,4 +81,4 @@ src/
 
 ## Kindex
 
-Ledger captures discoveries, decisions, and classification rationale in [Kindex](~/WanderRepos/repos/kindex). Search before adding. Link related concepts.
+Ledger captures discoveries, decisions, and classification rationale in [Kindex](https://github.com/wandercom/kindex). Search before adding. Link related concepts.
